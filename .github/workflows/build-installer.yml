@@ -1,0 +1,52 @@
+# Builds the Mohamedeladlydev Windows installer
+name: Build Mohamedeladlydev installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Write packaging settings (auto-update disabled)
+        run: |
+          $id = -join ((1..32) | % { '{0:x}' -f (Get-Random -Max 16) })
+          @"
+          DSH_DESKTOP_APP_ID=com.mohamedeladlydev.app
+          DSH_DESKTOP_AUTO_UPDATE_ENV=test
+          DOWNLOAD_TEST_ORIGIN=https://updates.invalid
+          DOWNLOAD_TEST_RELEASE_ID=$id
+          DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://updates.invalid
+          DSH_DESKTOP_MANDATORY_UPDATE_CONFIG='{"allowedAuthOrigins":["https://login.invalid"]}'
+          DSH_DESKTOP_WINDOWS_COMPRESSION_LEVEL=3
+          "@ | Set-Content -Encoding utf8NoBOM apps/desktop/.env.windows
+      - name: Package unsigned Windows installer
+        working-directory: apps/desktop
+        run: pnpm run package:win:x64:unsigned
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mohamedeladlydev-windows-installer
+          path: apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*-unsigned.exe
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: packaging-logs
+          include-hidden-files: true
+          path: apps/desktop/.desktop-build/packaging-runs/
